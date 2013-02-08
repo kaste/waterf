@@ -1,12 +1,5 @@
 A convenience module on top of the deferred library that comes with the Google AppEngine (GAE).
 
-Note that you have to enable the deferred library in your app.yaml
-
-::
-
-    builtins:
-    - deferred: on
-
 In a nutshell::
 
     from waterf import queue, task
@@ -32,7 +25,14 @@ You use ``task()`` exactly the same as you used ``deferred.defer()``::
 
 After constructing a task you either ``run()`` or ``enqueue()`` it; whereby::
 
-	task(foo, 'bar').enqueue()  <==> deferred.defer(foo, 'bar')
-	task(foo, 'bar').run()      <==> foo('bar')
+    task(foo, 'bar').enqueue()  <==> deferred.defer(foo, 'bar')
+    task(foo, 'bar').run()      <==> foo('bar')
 
-Read the tests. Thank you.
+Note that you have to enable the deferred library in your app.yaml
+
+::
+
+    builtins:
+    - deferred: on
+
+Thank you.
