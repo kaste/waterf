@@ -37,6 +37,7 @@ from google.appengine.ext import ndb
 
 import types, hashlib
 import uuid
+from collections import defaultdict
 import logging
 logger = logging.getLogger(__name__)
 
@@ -90,20 +91,18 @@ def curry_callback(obj):
     elif isinstance(obj, (types.FunctionType, types.BuiltinFunctionType,
                         types.ClassType, types.UnboundMethodType)):
         return obj
-    elif isinstance(obj, _Task):
+    elif isinstance(obj, Deferred):
         return obj
     else:
         raise ValueError("obj must be callable")
 
-class _Future(object):
+class _CallbacksInterface(object):
     def __init__(self):
-        self._success = []
-        self._failure = []
-        self._always = []
+        self.callbacks = defaultdict(list)
 
     def notify(self, type, message):
-        callbacks = getattr(self, '_' + type, [])
-        for callback in callbacks + self._always:
+        callbacks = self.callbacks[type] + self.callbacks['always']
+        for callback in callbacks:
             # print callback, type
             # deferred.defer(invoke_callback, callback, message)
             invoke_callback(callback, message)
@@ -116,7 +115,7 @@ class _Future(object):
 
 
     def _add_callback(self, type, callback):
-        getattr(self, '_' + type).append(curry_callback(callback))
+        self.callbacks[type].append(curry_callback(callback))
         return self
 
     def success(self, callback):
@@ -143,11 +142,11 @@ class _Semaphore(ndb.Model):
 class Object(object): pass
 OMITTED = Object()
 
-class _Task(_Future):
+class Deferred(_CallbacksInterface):
     suppress_task_exists_error = True
 
     def __init__(self, **options):
-        super(_Task, self).__init__()
+        super(Deferred, self).__init__()
         self.id = options.pop('_id', None)
         self.options = options
 
@@ -209,7 +208,7 @@ class _Task(_Future):
         ndb.Key(_Semaphore, self.id).delete()
 
 
-class Task(_Task):
+class Task(Deferred):
     def __init__(self, func, *args, **kwargs):
         self.target = curry_callback(func)
         self.args = args
@@ -237,21 +236,21 @@ class Task(_Task):
             self.abort(rv)
         elif isinstance(rv, AbortQueue):
             self.abort(rv)
-        elif isinstance(rv, _Task):
+        elif isinstance(rv, Deferred):
             self.enqueue_as_subtask(rv)
         else:
             self.resolve(rv)
         return rv
 
-    _subtask_completed = _Task.resolve
-    _subtask_failed = _Task.abort
+    _subtask_completed = Deferred.resolve
+    _subtask_failed = Deferred.abort
 
     def __repr__(self):
         return "Task(%s)" % formatspec(self.target, *self.args, **self.kwargs)
 
 task = Task
 
-class InOrder(_Task):
+class InOrder(Deferred):
     def __init__(self, *tasks, **options):
         super(InOrder, self).__init__(**options)
         self.tasks = list(tasks)
@@ -266,7 +265,7 @@ class InOrder(_Task):
         else:
             self.resolve(message)
 
-    _subtask_failed = _Task.abort
+    _subtask_failed = Deferred.abort
 
     def __repr__(self):
         return "InOrder(%s)" % formatspec(*self.tasks, **self.options)
@@ -283,7 +282,7 @@ class _Counter(ndb.Model):
         return '_Waterf_Counter'
 
 
-class Parallel(_Task):
+class Parallel(Deferred):
     def __init__(self, *tasks, **options):
         super(Parallel, self).__init__(**options)
 
