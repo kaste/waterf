@@ -47,49 +47,48 @@ class TestWater:
 
     def testParallel(self, taskqueue, ndb):
         queue.parallel(
-            task(P), task(P), task(P)
+            task(P, 'ONE'), task(P, 'TWO'), task(P, 'THREE')
         ).run()
 
         assert count_tasks(taskqueue) == 3
         consume(taskqueue)
 
-        assert 'P P P'.split() == messages
+        assert 'ONE TWO THREE'.split() == messages
 
     def testCombined(self, taskqueue, fastndb):
         queue.inorder(
             task(A),
-            queue.parallel(task(P), task(P), task(P)),
+            queue.parallel(task(P, 'ONE'), task(P, 'TWO'), task(P, 'THREE')),
             task(B)
         ).run()
 
         consume(taskqueue)
 
-        assert ['A', 'P', 'P', 'P', 'B'] == messages
+        assert 'A ONE TWO THREE B'.split() == messages
 
         assert [] == queue._Counter.query().fetch()
 
     def testNestedInOrder(self, taskqueue, ndb):
         queue.inorder(
             task(A),
-            queue.inorder(task(A), task(B), task(C)),
+            queue.inorder(task(P, 'ONE'), task(P, 'TWO')),
             task(C)
         ).run()
 
         consume(taskqueue)
-        assert 'A A B C C'.split() == messages
+        assert 'A ONE TWO C'.split() == messages
 
     def testNestedParallel(self, taskqueue, ndb):
         queue.inorder(
             task(A),
             queue.parallel(
-                task(B),
-                queue.parallel(task(P), task(P), task(P)),
+                queue.parallel(task(P, 'ONE'), task(P, 'TWO'), task(P, 'THREE')),
                 task(B)),
             task(C)
         ).run()
 
         consume(taskqueue)
-        assert "A B B P P P C".split() == messages
+        assert "A B ONE TWO THREE C".split() == messages
 
     def testAbortInOrder(self, taskqueue, ndb):
         queue.inorder(
@@ -110,26 +109,26 @@ class TestWater:
 
     def testAbortParallel(self, taskqueue, fastndb):
         queue.parallel(
-            task(P), task(T), task(P)
+            task(P, 'ONE'), task(T), task(P, 'TWO')
         ).then(task(C)).run()
 
         consume(taskqueue)
-        assert "P P".split() == messages
+        assert "ONE TWO".split() == messages
 
         assert [] == queue._Counter.query().fetch()
 
     def testAbortNestedParallel(self, taskqueue, fastndb):
         queue.parallel(
-            queue.parallel(task(P), task(T), task(P)),
+            queue.parallel(task(P, 'ONE'), task(T), task(P, 'TWO')),
             task(B)
         ).then(task(C)).run()
 
         consume(taskqueue)
-        assert "B P P".split() == messages
+        assert "B ONE TWO".split() == messages
 
         assert [] == queue._Counter.query().fetch()
 
-    def testReturnAbortToAbort(self, taskqueue):
+    def testReturnAbortToAbort(self, taskqueue, ndb):
         queue.inorder(
             task(A),
             task(RETURN_ABORT),
@@ -165,13 +164,13 @@ class TestWater:
 
 
     class TestFurtherDefer:
-        def testFurtherDefer(self, taskqueue):
+        def testFurtherDefer(self, taskqueue, ndb):
             task(DEFER).run()
             consume(taskqueue)
 
             assert "DEFER deferred".split() == messages
 
-        def testEnsureInOrderExecution(self, taskqueue):
+        def testEnsureInOrderExecution(self, taskqueue, ndb):
             queue.inorder(
                 task(A),
                 task(DEFER),

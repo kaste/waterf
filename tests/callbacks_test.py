@@ -32,7 +32,7 @@ class TestCallbacks:
         task(Ok).success(handler).run()
         assert ['Ok'] == messages
 
-    def testDeferredHandler(self, taskqueue):
+    def testDeferredHandler(self, taskqueue, ndb):
         task(Ok).success(task(handler)).run()
         assert count_tasks(taskqueue) == 1
         consume(taskqueue)
@@ -50,7 +50,7 @@ class TestCallbacks:
         assert isinstance(messages[0], queue.AbortQueue)
 
 
-    def testInOrderReturnsLastResult(self, taskqueue):
+    def testInOrderReturnsLastResult(self, taskqueue, ndb):
         queue.inorder(
             task(Ok, 'ONE'), task(Ok, 'TWO')
         ).then(handler).run()

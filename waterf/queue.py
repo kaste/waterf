@@ -1,8 +1,41 @@
+"""
+watef is built on top of appengine's deferred library.
+
+The relationship between the defined Task below and the deferred library
+is as follows::
+
+    t = task(foo, 'bar', **options)
+    t.enqueue()  ==> deferred.defer(t.run, **options)
+    t.run()      ==> foo('bar')
+
+A task implements a jquery-like-callback-interface, where you can register
+callbacks::
+
+    t.success(cllb)
+    t.failure(cllb)
+    t.always(cllb)
+    t.then(success_cllb, failure_cllb)
+
+Note that you have to register your callbacks before enqueue'ing the task,
+because the callbacks go to the server as well.
+
+The callbacks are fired when the task
+A callback can be an ordinary function (or method) or another task. The
+latter one will be enqueued when the task gets resolved. The functions get
+executed immediately.
+
+
+
+
+"""
+
+
+
 from google.appengine.api import taskqueue
 from google.appengine.ext import deferred
 from google.appengine.ext import ndb
 
-import types
+import types, hashlib
 import uuid
 import logging
 logger = logging.getLogger(__name__)
@@ -107,37 +140,57 @@ class _Semaphore(ndb.Model):
     def _get_kind(cls):
         return '_Waterf_Semaphore'
 
+class Object(object): pass
+OMITTED = Object()
+
 class _Task(_Future):
     suppress_task_exists_error = True
 
     def __init__(self, **options):
         super(_Task, self).__init__()
+        self.id = options.pop('_id', None)
         self.options = options
 
     def run(self):
         raise NotImplemented
 
-    def _already_enqueued(self):
-        id = self.id
-        if _Semaphore.get_by_id(id):
-            if not self.suppress_task_exists_error:
-                raise TaskAlreadyExistsError
-            return True
-        _Semaphore.get_or_insert(id)
-        self.always(self._cleanup)
-        return False
+    def is_enqueued(self):
+        return _Semaphore.get_by_id(self.id) is not None
 
-    def enqueue(self, id=None, **opts):
-        if id is not None:
-            self.id = id
-            if self._already_enqueued():
-                return
+    def mark_as_enqueued(self):
+        _Semaphore.get_or_insert(self.id)
 
+    def enqueue_direct(self, **opts):
         logger.info('Enqueue %s' % self)
+
         options = self.options.copy()
         options.update(opts)
+
+        return deferred.defer(self.run, **options)
+
+    def enqueue(self, id=OMITTED, **options):
+        if id is not OMITTED:
+            self.id = id
+        elif '_name' not in options and '_name' not in self.options:
+            self.id = hashlib.md5("%s" % self).hexdigest()
+
+
+        @ndb.transactional
+        def tx():
+            self.mark_as_enqueued()
+            self.always(self._cleanup)
+
+            options['_transactional'] = True
+            return self.enqueue_direct(**options)
+
+
         try:
-            deferred.defer(self.run, **options)
+            if self.id:
+                if self.is_enqueued():
+                    raise TaskAlreadyExistsError
+                return tx()
+            else:
+                return self.enqueue_direct(**options)
         except TaskAlreadyExistsError:
             if not self.suppress_task_exists_error:
                 raise
