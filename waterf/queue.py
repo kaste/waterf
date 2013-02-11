@@ -1,29 +1,17 @@
 """
-watef is built on top of appengine's deferred library.
+In a nutshell::
 
-The relationship between the defined Task below and the deferred library
-is as follows::
+    from waterf import queue, task
 
-    t = task(foo, 'bar', **options)
-    t.enqueue()  ==> deferred.defer(t.run, **options)
-    t.run()      ==> foo('bar')
-
-A task implements a jquery-like-callback-interface, where you can register
-callbacks::
-
-    t.success(cllb)
-    t.failure(cllb)
-    t.always(cllb)
-    t.then(success_cllb, failure_cllb)
-
-Note that you have to register your callbacks before enqueue'ing the task,
-because the callbacks go to the server as well.
-
-The callbacks are fired when the task
-A callback can be an ordinary function (or method) or another task. The
-latter one will be enqueued when the task gets resolved. The functions get
-executed immediately.
-
+    queue.inorder(
+        task(check_condition),
+        queue.parallel(
+            task(remove, id=101),
+            task(remove, id=102),
+            task(remove, id=103)
+        ),
+        task(email, to='foo@bar.com')
+    ).enqueue()
 
 
 
@@ -97,6 +85,24 @@ def curry_callback(obj):
         raise ValueError("obj must be callable")
 
 class _CallbacksInterface(object):
+    """ A JQuery-like interface.
+    Register your callbacks::
+
+        task(...).success(cllb) \
+                 .failure(cllb) \
+                 .always(cllb)  \
+                 .then(success_cllb, failure_cllb)
+
+    Later when you either ``abort()`` or ``resolve()`` your task, the
+    corresponding callbacks get fired.
+
+    A callback can be an ordinary function (or method) or another task. The
+    latter one will be enqueued when the task gets resolved. The functions get
+    executed immediately.
+
+    Note that you have to register your callbacks before enqueue'ing the task,
+    because the callbacks go to the server as well.
+    """
     def __init__(self):
         self.callbacks = defaultdict(list)
 
@@ -143,6 +149,19 @@ class Object(object): pass
 OMITTED = Object()
 
 class Deferred(_CallbacksInterface):
+    """ Enqueue-Run-Interface
+
+    The relationship with the deferred.defer library is as follows::
+
+        t = task(foo, 'bar', **options)
+        t.enqueue()  ==> deferred.defer(t.run, **options)
+        t.run()      ==> foo('bar')
+
+    The provided ``enqueue`` method though silently protects you against
+    queue'in the same task multiple times before it finished. Use
+    ``enqueue_direct()`` if you don't like that.
+
+    """
     suppress_task_exists_error = True
 
     def __init__(self, **options):
@@ -200,9 +219,10 @@ class Deferred(_CallbacksInterface):
             .enqueue()
 
     def _subtask_completed(self, message):
-        raise NotImplemented
+        self.resolve(message)
+
     def _subtask_failed(self, message):
-        raise NotImplemented
+        self.abort(message)
 
     def _cleanup(self, message):
         ndb.Key(_Semaphore, self.id).delete()
@@ -242,9 +262,6 @@ class Task(Deferred):
             self.resolve(rv)
         return rv
 
-    _subtask_completed = Deferred.resolve
-    _subtask_failed = Deferred.abort
-
     def __repr__(self):
         return "Task(%s)" % formatspec(self.target, *self.args, **self.kwargs)
 
@@ -264,8 +281,6 @@ class InOrder(Deferred):
             self.run()
         else:
             self.resolve(message)
-
-    _subtask_failed = Deferred.abort
 
     def __repr__(self):
         return "InOrder(%s)" % formatspec(*self.tasks, **self.options)
