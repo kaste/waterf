@@ -152,7 +152,7 @@ class _Task(_Future):
     def _subtask_failed(self, message):
         raise NotImplemented
 
-    def _cleanup(self):
+    def _cleanup(self, message):
         ndb.Key(_Semaphore, self.id).delete()
 
 
