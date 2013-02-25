@@ -117,9 +117,11 @@ class _CallbacksInterface(object):
             invoke_callback(callback, message)
 
     def abort(self, message):
+        logger.debug("Abort %s with %r" % (self, message))
         self.notify('failure', message)
 
     def resolve(self, message):
+        logger.debug("Resolve %s with %r" % (self, message))
         self.notify('success', message)
 
 
@@ -182,7 +184,7 @@ class Deferred(_CallbacksInterface):
         _Semaphore.get_or_insert(self.id)
 
     def enqueue_direct(self, **opts):
-        logger.info('Enqueue %s' % self)
+        logger.info('Enqueue %s with %s' % (self, opts))
 
         options = self.options.copy()
         options.update(opts)
@@ -251,7 +253,6 @@ class Task(Deferred):
         except AbortQueue, e:
             rv = e
         except PermanentTaskFailure, e:
-            logger.info("%s sent ABORT" % self)
             self.abort(e)
             raise
 
