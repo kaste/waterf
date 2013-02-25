@@ -20,8 +20,11 @@ In a nutshell::
 
 
 from google.appengine.api import taskqueue
-from google.appengine.ext import deferred
 from google.appengine.ext import ndb
+try:
+    import deferred2 as deferred
+except ImportError:
+    from google.appengine.ext import deferred
 
 import types, hashlib
 import uuid
