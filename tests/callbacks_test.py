@@ -32,6 +32,11 @@ class TestCallbacks:
         task(Ok).success(handler).run()
         assert ['Ok'] == messages
 
+    def testCantAddTheSameHandlerTwice(self, taskqueue):
+        task(Ok).success(handler).success(handler).run()
+        assert ['Ok'] == messages
+
+
     def testDeferredHandler(self, taskqueue, ndb):
         task(Ok).success(task(handler)).run()
         assert count_tasks(taskqueue) == 1

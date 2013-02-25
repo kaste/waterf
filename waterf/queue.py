@@ -107,10 +107,10 @@ class _CallbacksInterface(object):
     because the callbacks go to the server as well.
     """
     def __init__(self):
-        self.callbacks = defaultdict(list)
+        self.callbacks = defaultdict(set)
 
     def notify(self, type, message):
-        callbacks = self.callbacks[type] + self.callbacks['always']
+        callbacks = self.callbacks[type].copy() | self.callbacks['always']
         for callback in callbacks:
             # print callback, type
             # deferred.defer(invoke_callback, callback, message)
@@ -124,7 +124,7 @@ class _CallbacksInterface(object):
 
 
     def _add_callback(self, type, callback):
-        self.callbacks[type].append(curry_callback(callback))
+        self.callbacks[type].add(curry_callback(callback))
         return self
 
     def success(self, callback):
