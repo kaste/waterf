@@ -40,7 +40,7 @@ TaskAlreadyExistsError = taskqueue.TaskAlreadyExistsError
 class AbortQueue(PermanentTaskFailure):
     pass
 
-def ABORT(message):
+def ABORT(message=None):
     raise AbortQueue(message)
 
 def formatspec(funcname=None, *args, **kwargs):
