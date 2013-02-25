@@ -28,6 +28,13 @@ def taskqueue(request, bed):
     return bed.get_stub(testbed.TASKQUEUE_SERVICE_NAME)
 
 @pytest.fixture
+def blobstore(request, bed):
+    bed.init_blobstore_stub()
+    bed.init_files_stub()
+    from google.appengine.ext import blobstore
+    return blobstore
+
+@pytest.fixture
 def ndb(bed):
     from google.appengine.datastore import datastore_stub_util
     bed.init_memcache_stub()
