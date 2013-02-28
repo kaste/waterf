@@ -181,3 +181,26 @@ class TestWater:
 
             assert "A DEFER deferred B".split() == messages
 
+
+class Foo(object):
+    def __init__(self, m='bar'):
+        self.m = m
+
+    def bar(self):
+        messages.append(self.m)
+
+    def __repr__(self):
+        return "Foo<m=%s>" % self.m
+
+@pytest.mark.usefixtures("clear_messages")
+class TestPickableTasks:
+    def testA(self, taskqueue, ndb):
+        foo = Foo()
+        task(foo.bar).enqueue()
+        consume(taskqueue)
+
+        assert ['bar'] == messages
+
+
+
+

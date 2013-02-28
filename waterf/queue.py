@@ -19,9 +19,9 @@ def ABORT(message):
     raise AbortQueue(message)
 
 def formatspec(funcname=None, *args, **kwargs):
-    spec = ["%s" % funcname]
-    spec.extend(["%r" % a for a in args])
-    spec.extend(["%s=%r" % (k, v) for k, v in kwargs.items()])
+    spec = [str(funcname)]
+    spec.extend([repr(a) for a in args])
+    spec.extend(["%s=%s" % (k, (repr(v))) for k, v in kwargs.items()])
     return ', '.join(spec)
 
 def _extract_options(kwargs):
@@ -158,14 +158,21 @@ class _Task(_Future):
 
 class Task(_Task):
     def __init__(self, func, *args, **kwargs):
-        self.func = func
+        self.target = curry_callback(func)
         self.args = args
         self.kwargs, options = _extract_options(kwargs)
         super(Task, self).__init__(**options)
 
+    @property
+    def callable(self):
+        if isinstance(self.target, tuple):
+            return getattr(*self.target)
+        else:
+            return self.target
+
     def run(self):
         try:
-            rv = self.func(*self.args, **self.kwargs)
+            rv = self.callable(*self.args, **self.kwargs)
         except AbortQueue, e:
             rv = e
         except PermanentTaskFailure, e:
@@ -187,7 +194,7 @@ class Task(_Task):
     _subtask_failed = _Task.abort
 
     def __repr__(self):
-        return "Task(%s)" % formatspec(self.func.__name__, *self.args, **self.kwargs)
+        return "Task(%s)" % formatspec(self.target, *self.args, **self.kwargs)
 
 task = Task
 
