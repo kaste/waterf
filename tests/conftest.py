@@ -10,6 +10,11 @@ def fix_sys_path(path):
     import dev_appserver
     dev_appserver.fix_sys_path()
 
+    # shut up, noisy tasklets, you
+    from google.appengine.ext import ndb
+    ndb.utils.DEBUG = False
+
+
 def pytest_addoption(parser):
     group = parser.getgroup("gae", "google app engine plugin")
     group.addoption('--waterf-sdk', action='store', dest='gaesdk_path',
