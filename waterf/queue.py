@@ -154,65 +154,68 @@ class Deferred(_CallbacksInterface):
         t.run()      ==> foo('bar')
 
     The provided ``enqueue`` method though silently protects you against
-    queue'in the same task multiple times before it finished. Use
-    ``enqueue_direct()`` if you don't like that.
+    queue'in the same task multiple times before it finished.
 
     """
     suppress_task_exists_error = True
+    Semaphore = _Semaphore
 
     def __init__(self, **options):
         super(Deferred, self).__init__()
-        self.id = options.pop('_id', None)
         self.options = options
+        self.uid = str(uuid.uuid1())
+
+        self._release_after = self.options.pop('release_after', 0)
 
     def run(self):
         raise NotImplemented
 
     def is_enqueued(self):
-        return _Semaphore.get_by_id(self.id) is not None
+        return self.Semaphore.get_by_id(self.id) is not None
 
     def mark_as_enqueued(self):
-        _Semaphore.get_or_insert(self.id)
+        self.Semaphore.get_or_insert(self.id)
 
-    def enqueue_direct(self, **opts):
-        logger.info('Enqueue %s with %s' % (self, opts))
+    def enqueue_direct(self, **options):
+        logger.info('Enqueue %s with %s' % (self, options))
 
+        options = self._prefix_keys_with_(options)
+        return deferred.defer(self.run, **options)
+
+    def enqueue(self, **opts):
         options = self.options.copy()
         options.update(opts)
 
-        return deferred.defer(self.run, **options)
+        if 'use_id' in options and 'name' in options:
+            raise TypeError("Either set use_id or name, but not both")
 
-    def enqueue(self, id=OMITTED, **options):
-        if id is not OMITTED:
-            self.id = id
-        elif '_name' not in options and '_name' not in self.options:
-            self.id = hashlib.md5("%s" % self).hexdigest()
-
-
-        @ndb.transactional
-        def tx():
-            self.mark_as_enqueued()
-            self.always(self._cleanup)
-
-            options['_transactional'] = True
-            return self.enqueue_direct(**options)
-
+        use_id = options.pop('use_id', False if 'name' in options else True)
+        if 'release_after' in options:
+            self._release_after = options.pop('release_after')
 
         try:
-            if self.id:
+            if not use_id:
+                return self.enqueue_direct(**options)
+            else:
+                self.id = self._generate_id() if use_id is True else use_id
                 if self.is_enqueued():
                     raise TaskAlreadyExistsError
-                return tx()
-            else:
-                return self.enqueue_direct(**options)
-        except TaskAlreadyExistsError:
+
+                self.always(self._cleanup_handler())
+
+                task = self.enqueue_direct(**options)
+                self.mark_as_enqueued()
+                return task
+
+        except TaskAlreadyExistsError, taskqueue.TombstonedTaskError:
             if not self.suppress_task_exists_error:
                 raise
+            logger.info("Task existed.")
 
-    def enqueue_as_subtask(self, task):
+    def enqueue_subtask(self, task):
         task.success(self._subtask_completed)  \
             .failure(self._subtask_failed)     \
-            .enqueue()
+            .enqueue_as_subtask()
 
     def _subtask_completed(self, message):
         self.resolve(message)
@@ -220,8 +223,34 @@ class Deferred(_CallbacksInterface):
     def _subtask_failed(self, message):
         self.abort(message)
 
+    def enqueue_as_subtask(self):
+        if 'name' in self.options or 'use_id' in self.options:
+            return self.enqueue()
+        else:
+            return self.enqueue(name=self.uid)
+
+    def _cleanup_handler(self):
+        if self._release_after == 0:
+            return self._cleanup
+        else:
+            return task(self._cleanup, _countdown=self._release_after)
+
     def _cleanup(self, message):
-        ndb.Key(_Semaphore, self.id).delete()
+        logger.debug("Cleanup %s" % self)
+        ndb.Key(self.Semaphore, self.id).delete()
+
+    def _generate_id(self):
+        return hashlib.md5("%s" % self).hexdigest()
+
+    def _prefix_keys_with_(self, options, prefix='_'):
+        new_options = {}
+        for key, value in options.items():
+            if key.startswith(prefix):
+                new_options[key] = value
+            else:
+                new_options[prefix + key] = value
+
+        return new_options
 
 
 class Task(Deferred):
@@ -253,7 +282,7 @@ class Task(Deferred):
         elif isinstance(rv, AbortQueue):
             self.abort(rv)
         elif isinstance(rv, Deferred):
-            self.enqueue_as_subtask(rv)
+            self.enqueue_subtask(rv)
         else:
             self.resolve(rv)
         return rv
@@ -281,7 +310,7 @@ class InOrder(Deferred):
 
     def run(self):
         task = self.tasks.pop(0)
-        self.enqueue_as_subtask(task)
+        self.enqueue_subtask(task)
 
     def _subtask_completed(self, message):
         if self.tasks:
@@ -290,7 +319,7 @@ class InOrder(Deferred):
             self.resolve(message)
 
     def __repr__(self):
-        return "InOrder(%s)" % formatspec(*self.tasks, **self.options)
+        return "InOrder(%s)" % formatspec(*self.tasks)
 
 inorder = InOrder
 
@@ -307,15 +336,13 @@ class _Counter(ndb.Model):
 class Parallel(Deferred):
     def __init__(self, *tasks, **options):
         super(Parallel, self).__init__(**options)
-
-        self._uuid = str(uuid.uuid1())
         self.tasks = list(tasks)
 
     def run(self):
         self.completed = 0
         self.always(self._cleanup_counter)
         for task in self.tasks:
-            self.enqueue_as_subtask(task)
+            self.enqueue_subtask(task)
 
     def _subtask_completed(self, message):
         @ndb.transactional
@@ -337,25 +364,25 @@ class Parallel(Deferred):
 
     def _cleanup_counter(self, message):
         logger.debug('Delete Counter for %s' % self)
-        ndb.Key(_Counter, self._uuid).delete()
+        ndb.Key(_Counter, self.uid).delete()
 
     def aborted(self):
-        return _Counter.get_by_id(self._uuid) is None
+        return _Counter.get_by_id(self.uid) is None
 
     @property
     def completed(self):
-        return _Counter.get_by_id(self._uuid).counter
+        return _Counter.get_by_id(self.uid).counter
 
     @completed.setter
     def completed(self, value):
         @ndb.transactional
         def tx():
-            entity = _Counter.get_or_insert(self._uuid)
+            entity = _Counter.get_or_insert(self.uid)
             entity.counter = value
             entity.put()
         tx()
 
     def __repr__(self):
-        return "Parallel(%s)" % formatspec(*self.tasks, **self.options)
+        return "Parallel(%s)" % formatspec(*self.tasks)
 
 parallel = Parallel
