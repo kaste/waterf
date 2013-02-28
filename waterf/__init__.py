@@ -7,7 +7,7 @@
     :license: BSD, see LICENSE for more details.
 """
 
-__version__ = "2"
+__version__ = "2.0.1"
 
 import queue
 task = queue.task
