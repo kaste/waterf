@@ -49,15 +49,6 @@ def formatspec(funcname=None, *args, **kwargs):
     spec.extend(["%s=%s" % (k, (repr(v))) for k, v in kwargs.items()])
     return ', '.join(spec)
 
-def _extract_options(kwargs):
-    options = {}
-    for option in ("_countdown", "_eta", "_headers", "_name", "_target",
-            "_transactional", "_url", "_retry_options", "_queue"):
-        if option in kwargs:
-            options[option] = kwargs.pop(option)
-
-    return kwargs, options
-
 def invoke_callback(callable, message):
     if isinstance(callable, Task):
         callable.args = (message,) + callable.args
@@ -237,7 +228,8 @@ class Task(Deferred):
     def __init__(self, func, *args, **kwargs):
         self.target = curry_callback(func)
         self.args = args
-        self.kwargs, options = _extract_options(kwargs)
+        self.kwargs, options = self._extract_options(kwargs)
+
         super(Task, self).__init__(**options)
 
     @property
@@ -265,6 +257,17 @@ class Task(Deferred):
         else:
             self.resolve(rv)
         return rv
+
+    def _extract_options(self, kwargs):
+        options = {}
+        for option in ("_countdown", "_eta", "_headers", "_name", "_target",
+                "_transactional", "_url", "_retry_options", "_queue",
+                "_use_id", "_release_after"):
+            if option in kwargs:
+                # remove the prefix ('_')
+                options[option[1:]] = kwargs.pop(option)
+
+        return kwargs, options
 
     def __repr__(self):
         return "Task(%s)" % formatspec(self.target, *self.args, **self.kwargs)
