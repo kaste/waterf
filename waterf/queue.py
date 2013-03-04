@@ -379,7 +379,11 @@ class Task(Deferred):
         return kwargs, options
 
     def __repr__(self):
-        return "Task(%s)" % formatspec(self.target, *self.args, **self.kwargs)
+        if isinstance(self.target, tuple):
+            funcname = "%s.%s" % self.target
+        else:
+            funcname = self.target.__name__
+        return "Task(%s)" % formatspec(funcname, *self.args, **self.kwargs)
 
 task = Task
 
