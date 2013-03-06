@@ -117,13 +117,12 @@ class _CallbacksInterface(object):
             self.failure(failure)
         return self
 
+
 class _Semaphore(ndb.Model):
     @classmethod
     def _get_kind(cls):
         return '_Waterf_Semaphore'
 
-class Object(object): pass
-OMITTED = Object()
 
 class Deferred(_CallbacksInterface):
     """The main enqueue-run-interface; handles enqueu'ing but doesn't implement
