@@ -49,34 +49,6 @@ def formatspec(funcname=None, *args, **kwargs):
     spec.extend(["%s=%s" % (k, (repr(v))) for k, v in kwargs.items()])
     return ', '.join(spec)
 
-def invoke_callback(callable, message):
-    if isinstance(callable, Task):
-        callable.args = (message,) + callable.args
-        return callable.enqueue()
-    try:
-        obj, methodname = callable
-        callable = getattr(obj, methodname)
-    except:
-        pass
-    return callable(message)
-
-def curry_callback(obj):
-    if isinstance(obj, types.MethodType):
-        return (obj.im_self, obj.im_func.__name__)
-    elif isinstance(obj, types.BuiltinMethodType):
-        if not obj.__self__:
-            return obj
-        else:
-            return (obj.__self__, obj.__name__)
-    elif isinstance(obj, types.ObjectType) and hasattr(obj, "__call__"):
-        return obj
-    elif isinstance(obj, (types.FunctionType, types.BuiltinFunctionType,
-                        types.ClassType, types.UnboundMethodType)):
-        return obj
-    elif isinstance(obj, Deferred):
-        return obj
-    else:
-        raise ValueError("obj must be callable")
 
 class _CallbacksInterface(object):
     """ A JQuery-like promise interface.
@@ -114,7 +86,7 @@ class _CallbacksInterface(object):
         for callback in callbacks:
             # print callback, type
             # deferred.defer(invoke_callback, callback, message)
-            invoke_callback(callback, message)
+            callback(message)
 
     def abort(self, message):
         logger.debug("Abort %s with %r" % (self, message))
@@ -126,7 +98,7 @@ class _CallbacksInterface(object):
 
 
     def _add_callback(self, type, callback):
-        self.callbacks[type].add(curry_callback(callback))
+        self.callbacks[type].add(pickable(callback))
         return self
 
     def success(self, callback):
@@ -335,18 +307,11 @@ class Task(Deferred):
 
     """
     def __init__(self, func, *args, **kwargs):
-        self.target = curry_callback(func)
+        self.callable = pickable(func)
         self.args = args
         self.kwargs, options = self._extract_options(kwargs)
 
         super(Task, self).__init__(**options)
-
-    @property
-    def callable(self):
-        if isinstance(self.target, tuple):
-            return getattr(*self.target)
-        else:
-            return self.target
 
     def run(self):
         try:
@@ -379,11 +344,7 @@ class Task(Deferred):
         return kwargs, options
 
     def __repr__(self):
-        if isinstance(self.target, tuple):
-            funcname = "%s.%s" % self.target
-        else:
-            funcname = self.target.__name__
-        return "Task(%s)" % formatspec(funcname, *self.args, **self.kwargs)
+        return "Task(%s)" % formatspec(self.callable.__name__, *self.args, **self.kwargs)
 
 task = Task
 
@@ -496,3 +457,44 @@ class Parallel(Deferred):
         return "Parallel(%s)" % formatspec(*self.tasks)
 
 parallel = Parallel
+
+
+def pickable(callable):
+    if isinstance(callable, types.MethodType):
+        return _PickableMethod(callable.im_self, callable.im_func.__name__)
+    elif isinstance(callable, types.BuiltinMethodType):
+        if not callable.__self__:
+            return callable
+        else:
+            return _PickableMethod(callable.__self__, callable.__name__)
+    elif isinstance(callable, types.ObjectType) and hasattr(callable, "__call__"):
+        return callable
+    elif isinstance(callable, (types.FunctionType, types.BuiltinFunctionType,
+                        types.ClassType, types.UnboundMethodType)):
+        return callable
+    elif isinstance(callable, Deferred):
+        return _TaskAsCallback(callable)
+    else:
+        raise ValueError("obj must be callable")
+
+class _PickableMethod(object):
+    def __init__(self, *curried):
+        self.curried = curried
+
+    def __call__(self, *a, **kw):
+        return getattr(*self.curried)(*a, **kw)
+
+    @property
+    def __name__(self):
+        return "%s.%s" % self.curried
+
+class _TaskAsCallback(object):
+    def __init__(self, task):
+        self.task = task
+
+    def __call__(self, *args, **kwargs):
+        self.task.args = args + self.task.args
+        self.task.kwargs.update(kwargs)
+        self.task.enqueue()
+
+

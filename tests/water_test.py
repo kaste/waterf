@@ -160,6 +160,7 @@ class TestWater:
         print queue.inorder(task(A), task(B))
         print queue.parallel(task(A), task(B), task(P, message='ONE'))
 
+        # 1/0
 
     class TestFurtherDefer:
         def testFurtherDefer(self, taskqueue, ndb):
@@ -198,6 +199,6 @@ class TestPickableTasks:
 
         assert ['bar'] == messages
 
-
+        # 1/0
 
 
