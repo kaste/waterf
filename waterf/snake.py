@@ -91,47 +91,53 @@ class _Result(ndb.Model):
         self.result = result
         self.put()
 
+class Result(queue.Lock):
+    model = _Result
+
+    def delete(self):
+        if self.exists():
+            self.get().delete()
+
+    def is_ready(self):
+        return self.exists() and self.get().is_ready()
+
+    def resolve(self, value):
+        if self.exists():
+            self.get().resolve(value)
+
+    def get_result(self):
+        if self.is_ready():
+            return self.get().result
+        else:
+            raise Pending
+
 
 class Pending(Exception): pass
 
 class Task(queue.Task):
-    Semaphore = _Result
+    _Lock = Result
 
     def __init__(self, f, *a, **kw):
         super(Task, self).__init__(f, *a, **kw)
         self.id = self._generate_id()
         self.root = None
 
-    @property
-    def future(self):
-        return self.Semaphore.get_by_id(self.id)
-
     def is_root(self):
         return self.root is None
 
-    def mark_as_enqueued(self):
-        self.Semaphore.get_or_insert(self.id)
-        # self.init_future()
+    @property
+    def future(self):
+        return Result(self.id)
 
     def resolve(self, result):
-        if self.future:
-            self.future.resolve(result)
+        self.future.resolve(result)
         super(Task, self).resolve(result)
 
     def is_ready(self):
-        if self.future is None:
-            return False
         return self.future.is_ready()
 
-    @property
-    def result(self):
-        return self.future.result
-
     def get_result(self):
-        if self.is_ready():
-            return self.result
-        else:
-            raise Pending
+        return self.future.get_result()
 
     def run(self):
         # child tasks are enqueued using _name, so they're not
@@ -199,8 +205,7 @@ class Task(queue.Task):
 
     def _cleanup(self, _):
         logger.debug("Cleanup %s" % self)
-        entity = self.Semaphore.get_by_id(self.id)
-        entity.delete()
+        self._lock.delete()
 
     def _subtask_completed(self, message):
         self.run()
@@ -217,7 +222,7 @@ class Parallel(queue.Parallel):
 
     @property
     def result(self):
-        return [task.result for task in self.tasks]
+        return [task.get_result() for task in self.tasks]
 
     def get_result(self):
         if self.is_ready():
