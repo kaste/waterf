@@ -118,10 +118,34 @@ class _CallbacksInterface(object):
         return self
 
 
-class _Semaphore(ndb.Model):
-    @classmethod
-    def _get_kind(cls):
-        return '_Waterf_Semaphore'
+
+class EntityFassade(object):
+    model = None
+
+    def __init__(self, name):
+        self.name = name
+
+    def exists(self):
+        return self.get() is not None
+
+    def create(self, *a, **kw):
+        return self.model.get_or_insert(self.name, *a, **kw)
+
+    def get(self):
+        return self.model.get_by_id(self.name)
+
+    def delete(self):
+        ndb.Key(self.model, self.name).delete()
+
+class Lock(EntityFassade):
+    class model(ndb.Model):
+        @classmethod
+        def _get_kind(cls):
+            return '_Waterf_Semaphore'
+
+    lock = EntityFassade.create
+    is_locked = EntityFassade.exists
+    release = EntityFassade.delete
 
 
 class Deferred(_CallbacksInterface):
@@ -173,7 +197,7 @@ class Deferred(_CallbacksInterface):
 
     """
     suppress_task_exists_error = True
-    Semaphore = _Semaphore
+    _Lock = Lock
 
     def __init__(self, **options):
         super(Deferred, self).__init__()
@@ -185,11 +209,15 @@ class Deferred(_CallbacksInterface):
     def run(self):
         raise NotImplemented
 
+    @property
+    def _lock(self):
+        return self._Lock(self.id)
+
     def is_enqueued(self):
-        return self.Semaphore.get_by_id(self.id) is not None
+        return self._lock.is_locked()
 
     def mark_as_enqueued(self):
-        self.Semaphore.get_or_insert(self.id)
+        self._lock.lock()
 
     def enqueue_direct(self, **options):
         logger.info('Enqueue %s with %s' % (self, options))
@@ -262,7 +290,7 @@ class Deferred(_CallbacksInterface):
 
     def _cleanup(self, message):
         logger.debug("Cleanup %s" % self)
-        ndb.Key(self.Semaphore, self.id).delete()
+        self._lock.release()
 
     def _generate_id(self):
         return hashlib.md5("%s" % self).hexdigest()

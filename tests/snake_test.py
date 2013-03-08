@@ -135,7 +135,7 @@ class TestSnakeFunctional:
 
         assert [['T1', 'T2']] == messages
         assert _Result.query().fetch() == []
-        assert Parallel.Semaphore.query().fetch() == []
+        assert queue.Lock.model.query().fetch() == []
         # 1/0
 
     def testNested(self, taskqueue, fastndb):
