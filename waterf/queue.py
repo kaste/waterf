@@ -137,6 +137,7 @@ class EntityFassade(object):
     def delete(self):
         ndb.Key(self.model, self.name).delete()
 
+class AlreadyLocked(Exception): pass
 class Lock(EntityFassade):
     class model(ndb.Model):
         @classmethod
@@ -146,6 +147,17 @@ class Lock(EntityFassade):
     lock = EntityFassade.create
     is_locked = EntityFassade.exists
     release = EntityFassade.delete
+
+    def protect(self, callable):
+        if self.is_locked():
+            raise AlreadyLocked
+
+        self.lock()
+        try:
+            return callable()
+        except:
+            self.release()
+            raise
 
 
 class Deferred(_CallbacksInterface):
@@ -251,14 +263,13 @@ class Deferred(_CallbacksInterface):
                 return self.enqueue_direct(**options)
             else:
                 self.id = self._generate_id() if use_id is True else use_id
-                if self.is_enqueued():
-                    raise TaskAlreadyExistsError
-
                 self.always(self._cleanup_handler())
 
-                task = self.enqueue_direct(**options)
-                self.mark_as_enqueued()
-                return task
+                try:
+                    return self._lock.protect(
+                        lambda: self.enqueue_direct(**options))
+                except AlreadyLocked:
+                    raise TaskAlreadyExistsError
 
         except TaskAlreadyExistsError, taskqueue.TombstonedTaskError:
             if not self.suppress_task_exists_error:
