@@ -502,7 +502,7 @@ def pickable(callable):
     elif isinstance(callable, Deferred):
         return _TaskAsCallback(callable)
     else:
-        raise ValueError("obj must be callable")
+        raise ValueError("Can't defer %s. Must be callable" % callable)
 
 class _PickableMethod(object):
     def __init__(self, *curried):
