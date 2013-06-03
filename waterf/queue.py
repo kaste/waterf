@@ -260,12 +260,17 @@ class Deferred(_CallbacksInterface):
 
         try:
             if not use_id:
+                if 'name' in options:
+                    logger.debug("Try enqueue'ing using name=%s"
+                                 % options['name'])
                 return self.enqueue_direct(**options)
             else:
                 self.id = self._generate_id() if use_id is True else use_id
                 self.always(self._cleanup_handler())
 
                 try:
+                    logger.debug("Try enqueue'ing with Lock(id=%s)."
+                                 % self.id)
                     return self._lock.protect(
                         lambda: self.enqueue_direct(**options))
                 except AlreadyLocked:
@@ -410,6 +415,7 @@ class InOrder(Deferred):
         self._repr = None
 
     def run(self):
+        logger.debug("Enqueue next task of %s" % self)
         task = self.tasks.pop(0)
         self.enqueue_subtask(task)
 
