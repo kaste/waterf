@@ -404,6 +404,11 @@ class InOrder(Deferred):
         super(InOrder, self).__init__(**options)
         self.tasks = list(tasks)
 
+        # cache for the __repr__-representation
+        # we do this because we use tasks.pop(0) later, which implicitly would
+        # modify the __repr__
+        self._repr = None
+
     def run(self):
         task = self.tasks.pop(0)
         self.enqueue_subtask(task)
@@ -415,7 +420,9 @@ class InOrder(Deferred):
             self.resolve(message)
 
     def __repr__(self):
-        return "InOrder(%s)" % formatspec(*self.tasks)
+        if not self._repr:
+            self._repr = "InOrder(%s)" % formatspec(*self.tasks)
+        return self._repr
 
 inorder = InOrder
 
