@@ -297,7 +297,8 @@ class Deferred(_CallbacksInterface):
         if self._release_after == 0:
             return self._cleanup
         else:
-            return task(self._cleanup, _countdown=self._release_after)
+            return task(self._cleanup,
+                        _countdown=self._release_after, _use_id=False)
 
     def _cleanup(self, message):
         logger.debug("Cleanup %s" % self)

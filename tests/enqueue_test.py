@@ -87,6 +87,21 @@ class TestQueueing:
             task(noop).enqueue()
             assert count_tasks(taskqueue) == 1
 
+        def testEnsureMultipleTaskGetCleanedIfReleaseAfterIsIused(
+                self, taskqueue, fastndb):
+            queue.inorder(
+                task(P, 'ONE')
+            ).enqueue(release_after=1)
+            queue.inorder(
+                task(P, 'TWO')
+            ).enqueue(release_after=1)
+
+            consume(taskqueue)
+            semaphores = queue.Lock.model.query().fetch()
+            assert len(semaphores) == 0
+
+            # 1/0
+
         def testGeneratedIdHandlesParameters(self, taskqueue, ndb):
             task(P, 'ONE').enqueue()
             task(P, 'TWO').enqueue()
